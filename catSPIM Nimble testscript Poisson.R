@@ -77,7 +77,7 @@ Niminits <- list(z=nimbuild$z,s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID
 
 #constants for Nimble
 constants<-list(M=M,J=J,K=data$K,K1D=K1D,n.samples=nimbuild$n.samples,n.cat=n.cat,
-                xlim=nimbuild$xlim,ylim=nimbuild$ylim,n.levels=data$n.levels)
+                xlim=nimbuild$xlim,ylim=nimbuild$ylim,n.levels=n.levels)
 
 #supply data to nimble
 Nimdata<-list(y.true=matrix(NA,nrow=M,ncol=J),
@@ -112,10 +112,24 @@ conf$addSampler(target = paste0("y.true[1:",M,",1:",J,"]"),
                 silent = TRUE)
 
 #replace default G.true sampler, which is not correct, with custom sampler for G.true, "GSampler"
+#2 options. First one is faster, but does not allow other parameters, say lam0 and sigma, to vary
+#as a function of ID covs in G.true
 conf$removeSampler("G.true")
 conf$addSampler(target = paste("G.true[1:",M,",1:",n.cat,"]", sep=""),
-                type = 'GSampler',
-                control = list(M=M,n.cat=n.cat,n.levels=data$n.levels), silent = TRUE)
+                type = 'GSampler1',
+                control = list(M=M,n.cat=n.cat,n.levels=n.levels), silent = TRUE)
+
+# #Second option allows other parameters to vary as function of G.true
+# conf$removeSampler("G.true")
+# for(i in 1:M){
+#   for(m in 1:n.cat){ #don't need to update first cat bc it is mark status
+#     conf$addSampler(target = paste("G.true[",i,",",m,"]", sep=""),
+#                     type = 'GSampler2',
+#                     control = list(i = i,m=m,M=M,n.cat=n.cat,n.samples=nimbuild$n.samples,
+#                                    n.levels=n.levels,G.noID=nimbuild$G.noID), silent = TRUE)
+#   }
+# }
+
 
 
 # ###Two *optional* sampler replacements:
@@ -127,7 +141,7 @@ for(i in 1:M){
   conf$addSampler(target = paste("s[",i,", 1:2]", sep=""),
                   type = 'AF_slice',control=list(adaptive=TRUE),silent = TRUE)
   #block RW option
-  #do not adapt covariance bc s's not deterministically linked to unmarked individuals
+  #do not adapt covariance bc samples not deterministically linked to individuals
   #longer adapt interval to average over more data configurations for each s_i
   # conf$addSampler(target = paste("s[",i,", 1:2]", sep=""), 
   #                 type = 'RW_block',control=list(adaptive=TRUE,adaptScaleOnly=TRUE,adaptInterval=500),silent = TRUE)
@@ -157,3 +171,6 @@ end.time-start.time2 # post-compilation run time
 library(coda)
 mvSamples = as.matrix(Cmcmc$mvSamples)
 plot(mcmc(mvSamples[2:nrow(mvSamples),]))
+
+#n is number of individuals captured. True value:
+data$n

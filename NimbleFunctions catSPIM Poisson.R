@@ -143,7 +143,11 @@ IDSampler <- nimbleFunction(
 
 ## sampler to update G.true subject to constraints stemming from G.obs
 #assigned to them.
-GSampler <- nimbleFunction(
+#2 options here. 
+#GSampler1 should be faster, but does not allow G.true to be modeled as a function of other
+#parameters, e.g., sex-specific detection functions
+#Just drawing from prior when a G is not fixed by an assigned sample and skipping otherwise.
+GSampler1 <- nimbleFunction(
   contains = sampler_BASE,
   setup = function(model, mvSaved, target, control) {
     # Defined stuff
@@ -153,15 +157,49 @@ GSampler <- nimbleFunction(
     calcNodes <- model$getDependencies(target)
   },
   run = function() {
-    for(l in 1:n.cat){
-      swap <- which(model$G.latent[1:M,l]==1)
+    for(m in 1:n.cat){
+      swap <- which(model$G.latent[1:M,m]==1)
       for(i in 1:length(swap)){
-        model$G.true[swap[i],l] <<- rcat(1,model$gammaMat[l,1:n.levels[l]])
+        model$G.true[swap[i],m] <<- rcat(1,model$gammaMat[m,1:n.levels[m]])
       }
     }
     # update logProb
     model_lp_proposed <- model$calculate(calcNodes)
     copy(from = model, to = mvSaved, row = 1, nodes = calcNodes, logProb = TRUE)
+  },
+  methods = list( reset = function () {} )
+)
+
+#Using Metropolis-Hastings here for unfixed G values so that parameters, say,
+#lam0 and sigma, can vary by G.true values
+GSampler2 <- nimbleFunction(
+  contains = sampler_BASE,
+  setup = function(model, mvSaved, target, control) {
+    # Defined stuff
+    M <- control$M
+    n.levels <- control$n.levels
+    calcNodes <- model$getDependencies(target)
+    i <- control$i
+    m <- control$m
+  },
+  run = function() {
+    if(model$G.latent[i,m]==1){ #skip if not latent
+      model.lp.initial <- model$getLogProb(calcNodes) #initial logProb
+      prop.back <- model$gammaMat[m,model$G.true[i,m]] #backwards proposal prob
+      G.prop <- rcat(1,model$gammaMat[m,1:n.levels[m]])
+      prop.for <- model$gammaMat[m,G.prop] #forwards proposal prob
+      model$G.true[i,m] <<- G.prop #store in model
+      model.lp.proposed <- model$calculate(calcNodes)#proposed logProb
+      log_MH_ratio <- (model.lp.proposed+log(prop.back)) - (model.lp.initial+log(prop.for))
+      
+      # log_MH_ratio
+      accept <- decide(log_MH_ratio)
+      if(accept) {
+        copy(from = model, to = mvSaved, row = 1, nodes = calcNodes, logProb = TRUE)
+      } else {
+        copy(from = mvSaved, to = model, row = 1, nodes = calcNodes, logProb = TRUE)
+      }
+    }
   },
   methods = list( reset = function () {} )
 )
