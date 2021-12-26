@@ -4,7 +4,7 @@ e2dist = function (x, y){
   matrix(dvec, nrow = nrow(x), ncol = nrow(y), byrow = F)
 }
 simCatSPIM <-
-  function(N=120,lam0=0.1,sigma=0.50,K=10,X=X,buff=3,obstype="bernoulli",n.cat=n.cat,
+  function(N=120,lam0=0.1,sigma=0.50,theta=NA,K=10,X=X,buff=3,obstype="poisson",n.cat=n.cat,
            pID=pID,gamma=gamma,IDcovs=IDcovs){
     # simulate a population of activity centers
     s<- cbind(runif(N, min(X[,1])-buff,max(X[,1])+buff), runif(N,min(X[,2])-buff,max(X[,2])+buff))
@@ -39,6 +39,14 @@ simCatSPIM <-
         for(j in 1:J){
           for(k in 1:K){
             y[i,j,k]=rpois(1,lamd[i,j])
+          }
+        }
+      } 
+    }else if(obstype=="negbin"){
+      for(i in 1:N){
+        for(j in 1:J){
+          for(k in 1:K){
+            y[i,j,k]=rnbinom(1,mu=lamd[i,j],size=theta)
           }
         }
       } 

@@ -1,22 +1,32 @@
+#This script uses a negative binomial observation model with mean parameter lambda and dispersion parameter theta
+#The custom ID update must now use a Metropolis-Hastings update since the full conditional is not known.
+#If you modify the model code to put covariates on the NB dispersion parameter, need to fix that in the custom ID update.
+
+#Generally, you're going to need more informative partial IDs to get decent density estimates compared to Poisson obs mod
+#Also, theta needs to be quite small (larger overdispersion) to detect overdispersion. Overdispersion is harder to
+#detect compared to a typical negative binomial regression because individual by trap expected counts a funcition
+#of activity center location, which also must be estimated
+
 library(nimble)
 library(coda)
 source("simCatSPIM.R")
 source("init.data.CatSPIM.R")
-source("NimbleModel catSPIM Poisson.R")
-source("NimbleFunctions catSPIM Poisson.R")
+source("NimbleModel catSPIM NegBin.R")
+source("NimbleFunctions catSPIM NegBin.R")
 
 #make sure to run this line!
 nimble:::setNimbleOption('MCMCjointlySamplePredictiveBranches', FALSE)
 nimbleOptions('MCMCjointlySamplePredictiveBranches') 
 
 #simulate some data
-N=50
+N=75
 lam0=0.25
+theta=0.025 #lower is more overdispersion
 sigma=0.50
 K=10
 buff=3 #state space buffer. Should be at least 3 sigma.
 X<- expand.grid(3:11,3:11)
-obstype="poisson"
+obstype="negbin"
 
 #categorical identity covariate stuff
 n.cat=3  #number of ID covariates
@@ -24,7 +34,7 @@ gamma=vector("list",n.cat) #population frequencies of each category level
 
 #Or this for generic ID covariates
 gamma=vector("list",n.cat)
-n.levels=c(2,3,4) #Number of levels per ID covariate
+n.levels=c(5,5,5) #Number of levels per ID covariate
 for(i in 1:n.cat){
   gamma[[i]]=rep(1/n.levels[i],n.levels[i]) #generating all equal category level frequencies
 }
@@ -32,15 +42,17 @@ IDcovs=vector("list",n.cat)
 for(i in 1:length(IDcovs)){
   IDcovs[[i]]=1:n.levels[i]
 }
-pID=rep(0.5,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
+pID=rep(0.95,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
 
 #n.cat=1 with nlevel=1 will produce unmarked SCR data with no ID covariates. 
 #Well, everyone has the same covariate value so they are effectively unmarked
 
 #Simulate some data
-data=simCatSPIM(N=N,lam0=lam0,sigma=sigma,K=K,X=X,buff=buff,obstype=obstype,
+data=simCatSPIM(N=N,lam0=lam0,theta=theta,sigma=sigma,K=K,X=X,buff=buff,obstype=obstype,
                 n.cat=n.cat,pID=pID,gamma=gamma,
                 IDcovs=IDcovs)
+#look for infrequent, larger individual by trap counts indicative of overdispersion
+table(data$y.true)
 
 #What is the observed data?
 #1) We have occasions and sites for each count member.
@@ -50,7 +62,7 @@ head(data$this.k)#not used in this sampler for 2D data, but required if using 3D
 head(data$G.obs)
 
 #Data augmentation level
-M=150
+M=175
 
 #trap operation matrix
 J=nrow(X)
@@ -81,7 +93,7 @@ Nimdata<-list(y.true=matrix(NA,nrow=M,ncol=J),
               z=rep(NA,M),X=as.matrix(data$X),capcounts=rep(NA,M))
 
 # set parameters to monitor
-parameters<-c('psi','lam0','sigma','N','n','gammaMat')
+parameters<-c('psi','lam0','theta','sigma','N','n','gammaMat')
 
 #can also monitor a different set of parameters with a different thinning rate
 parameters2 <- c("ID")
@@ -101,10 +113,10 @@ conf <- configureMCMC(Rmodel,monitors=parameters, thin=nt, monitors2=parameters2
 ##Here, we remove the default sampler for y.true
 #and replace it with the custom "IDSampler".
 conf$removeSampler("y.true")
-trapup=unique(data$this.j)
 conf$addSampler(target = paste0("y.true[1:",M,",1:",J,"]"),
                 type = 'IDSampler',control = list(M=M,J=J,this.j=data$this.j,G.obs=data$G.obs,
-                                                  G.obs.seen=G.obs.seen,trapup=trapup,n.cat=n.cat),
+                                                  G.obs.seen=G.obs.seen,n.cat=n.cat,n.samples=nrow(data$G.obs),
+                                                  K1D=K1D),
                 silent = TRUE)
 
 #replace default G.true sampler, which is not correct, with custom sampler for G.true, "GSampler"
