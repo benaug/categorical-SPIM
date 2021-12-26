@@ -4,7 +4,7 @@ NimModel <- nimbleCode({
   #--------------------------------------------------------------
   psi~dunif(0,1)
   lam0~dunif(0,10)
-  theta~dunif(0,100) #careful with this prior. Too much prior mass near 0 gives very strong prior weight to high overdispersion
+  theta~dunif(0,25) #careful with this prior. Too much prior mass near 0 gives very strong prior weight to high overdispersion
   sigma~dunif(0,100)
   #category level frequencies
   for(l in 1:n.cat){

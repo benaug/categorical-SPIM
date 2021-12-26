@@ -35,7 +35,7 @@ for(i in 1:length(IDcovs)){
 }
 pID=rep(0.9,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
 
-#n.cat=1 with nlevel=1 will produce unmarked SCR data with no ID covariates. 
+#n.cat=1 with n.levels=1 will produce unmarked SCR data with no ID covariates. 
 #Well, everyone has the same covariate value so they are effectively unmarked
 
 #Simulate some data
@@ -158,7 +158,7 @@ for(i in 1:M){
   #                 type = 'RW_block',control=list(adaptive=TRUE,adaptScaleOnly=TRUE,adaptInterval=500),silent = TRUE)
 }
 
-#use block update with covariance for lam0 and beta0 intercepts and sex offsets. bc correlated posteriors
+#use block update for lam0 and sigma. bc correlated posteriors.
 conf$removeSampler(c("lam0","sigma"))
 conf$addSampler(target = c(paste("lam0"),paste("sigma")),
                 type = 'AF_slice',control = list(adaptive=TRUE),silent = TRUE)

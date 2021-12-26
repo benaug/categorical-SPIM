@@ -19,9 +19,9 @@ nimble:::setNimbleOption('MCMCjointlySamplePredictiveBranches', FALSE)
 nimbleOptions('MCMCjointlySamplePredictiveBranches') 
 
 #simulate some data
-N=75
-lam0=0.25
-theta=0.025 #lower is more overdispersion
+N=50
+lam0=0.5
+theta=0.1 #lower is more overdispersion
 sigma=0.50
 K=10
 buff=3 #state space buffer. Should be at least 3 sigma.
@@ -34,7 +34,7 @@ gamma=vector("list",n.cat) #population frequencies of each category level
 
 #Or this for generic ID covariates
 gamma=vector("list",n.cat)
-n.levels=c(5,5,5) #Number of levels per ID covariate
+n.levels=c(7,7,7) #Number of levels per ID covariate
 for(i in 1:n.cat){
   gamma[[i]]=rep(1/n.levels[i],n.levels[i]) #generating all equal category level frequencies
 }
@@ -42,11 +42,11 @@ IDcovs=vector("list",n.cat)
 for(i in 1:length(IDcovs)){
   IDcovs[[i]]=1:n.levels[i]
 }
-pID=rep(0.95,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
+pID=rep(1,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
 
-#n.cat=1 with nlevel=1 will produce unmarked SCR data with no ID covariates. 
+#n.cat=1 with n.levels=1 will produce unmarked SCR data with no ID covariates. 
 #Well, everyone has the same covariate value so they are effectively unmarked
-
+set.seed(2343244)
 #Simulate some data
 data=simCatSPIM(N=N,lam0=lam0,theta=theta,sigma=sigma,K=K,X=X,buff=buff,obstype=obstype,
                 n.cat=n.cat,pID=pID,gamma=gamma,
@@ -75,13 +75,14 @@ for(l in 1:n.cat){
   gammaMat[l,1:n.levels[l]]=gamma[[l]]
 }
 inits=list(lam0=1,sigma=1,gammaMat=gammaMat)#initial values for lam0, sigma, and gammas to build data
-nimbuild=init.data.catSPIM(data=data,M=M,inits=inits)
+nimbuild=init.data.catSPIM(data=data,M=M,inits=inits) #watch for error building data if M needs to be larger to initialize.
 G.obs.seen=(data$G.obs!=0) #used in custom update to indicate which are observed
 
 #inits for nimble
 Niminits <- list(z=nimbuild$z,s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID,capcounts=rowSums(nimbuild$y.true2D),
                  y.true=nimbuild$y.true2D,G.latent=nimbuild$G.latent,lam0=inits$lam0,sigma=inits$sigma,
-                 gammaMat=gammaMat)
+                 gammaMat=gammaMat,
+                 theta=1)
 
 #constants for Nimble
 constants<-list(M=M,J=J,K=data$K,K1D=K1D,n.samples=nimbuild$n.samples,n.cat=n.cat,
@@ -155,10 +156,18 @@ for(i in 1:M){
   #                 type = 'RW_block',control=list(adaptive=TRUE,adaptScaleOnly=TRUE,adaptInterval=500),silent = TRUE)
 }
 
-#use block update with covariance for lam0 and beta0 intercepts and sex offsets. bc correlated posteriors
+#use block update for lam0 and sigma. bc correlated posteriors.
 conf$removeSampler(c("lam0","sigma"))
-conf$addSampler(target = c(paste("lam0"),paste("sigma")),
+conf$addSampler(target = c("lam0","sigma"),
                 type = 'AF_slice',control = list(adaptive=TRUE),silent = TRUE)
+
+#Might need longer adapt interval for theta if slow to converge so that it is well tuned after convergence.
+#In general, it looks like tuning the theta update is difficult with this algorithm for initializing the
+#latent capture data and sample IDs, which can be far from the truth.
+#Providing a small initial value for theta will help.
+conf$removeSampler("theta")
+conf$addSampler(target = c("theta"),
+                type = 'RW',control = list(adaptive=TRUE,adaptInterval=500),silent = TRUE)
 
 
 # Build and compile
