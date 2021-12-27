@@ -51,7 +51,7 @@ set.seed(2343244)
 data=simCatSPIM(N=N,lam0=lam0,theta=theta,sigma=sigma,K=K,X=X,buff=buff,obstype=obstype,
                 n.cat=n.cat,pID=pID,gamma=gamma,
                 IDcovs=IDcovs)
-#look for infrequent, larger individual by trap counts indicative of overdispersion
+#look for infrequent, larger individual by trap by occasion counts indicative of overdispersion
 table(data$y.true)
 
 #What is the observed data?
