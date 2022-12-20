@@ -178,7 +178,7 @@ IDSampler <- nimbleFunction(
     model$y.true <<- y.true
     model$ID <<- ID.curr
     model$G.latent <<-  (G.true.tmp==0)*1
-    model.lp.proposed <- model$calculate(calcNodes) #update logprob
+    model$calculate(calcNodes) #update logprob
     copy(from = model, to = mvSaved, row = 1, nodes = calcNodes, logProb = TRUE)
   },
   methods = list( reset = function () {} )

@@ -24,10 +24,6 @@ init.data.catSPIM=function(data=NA,M=NA,inits=inits,obstype="poisson"){
   xlim<- c(min(X[,1]),max(X[,1]))+c(-buff, buff)
   ylim<- c(min(X[,2]),max(X[,2]))+c(-buff, buff)
   
-  ##pull out initial values
-  lam0<- inits$lam0
-  sigma<- inits$sigma
-  
   #make constraints due to ID covs to initialize data
   constraints=matrix(1,nrow=n.samples,ncol=n.samples)
   for(i in 1:n.samples){
@@ -44,12 +40,11 @@ init.data.catSPIM=function(data=NA,M=NA,inits=inits,obstype="poisson"){
   binconstraints=FALSE
   if(obstype=="bernoulli"){
     # idx=which(y.obs>0,arr.ind=TRUE)
-    idx=t(apply(y.obs,1,function(x){which(x>0,arr.ind=TRUE)}))
     for(i in 1:n.samples){
       for(j in 1:n.samples){
         if(i!=j){
           # if(all(idx[i,2:3]==idx[j,2:3])){
-          if(all(idx[i,1:2]==idx[j,1:2])){
+          if(!(this.j[i]==this.j[j]&this.k[i]==this.k[j])){
             constraints[i,j]=0 #can't combine samples from same trap and occasion in binomial model
             constraints[j,i]=0
             binconstraints=TRUE
@@ -119,15 +114,18 @@ init.data.catSPIM=function(data=NA,M=NA,inits=inits,obstype="poisson"){
     }
   }
   
+  
+  sigma<- inits$sigma
   D=e2dist(s, X)
-  lamd<- lam0*exp(-D*D/(2*sigma*sigma))
   if(obstype=="bernoulli"){
-    pd=1-exp(-lamd)
+    p0<- inits$p0
+    pd<- p0*exp(-D*D/(2*sigma*sigma))
     ll.y=dbinom(y.true2D,K,pd*z,log=TRUE)
   }else if(obstype=="poisson"){
+    lam0<- inits$lam0
+    lamd<- lam0*exp(-D*D/(2*sigma*sigma))
     ll.y=dpois(y.true2D,K*lamd*z,log=TRUE)
   }
-  ll.y.cand=ll.y
   if(!is.finite(sum(ll.y)))stop("Starting obs model likelihood is not finite")
   
   #Initialize G.true
