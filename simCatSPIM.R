@@ -4,8 +4,13 @@ e2dist = function (x, y){
   matrix(dvec, nrow = nrow(x), ncol = nrow(y), byrow = F)
 }
 simCatSPIM <-
-  function(N=120,lam0=0.1,sigma=0.50,theta=NA,K=10,X=X,buff=3,obstype="poisson",n.cat=n.cat,
-           pID=pID,gamma=gamma,IDcovs=IDcovs){
+  function(N=120,lam0=NA,p0=NA,sigma=0.50,theta=NA,K=10,X=X,buff=3,obstype="poisson",n.cat=n.cat,
+           pID=pID,gamma=gamma,IDcovs=IDcovs,seed=NA){
+    
+    if(!is.na(seed)){
+      set.seed(seed)
+    }
+    
     # simulate a population of activity centers
     s<- cbind(runif(N, min(X[,1])-buff,max(X[,1])+buff), runif(N,min(X[,2])-buff,max(X[,2])+buff))
     D<- e2dist(s,X)
@@ -26,7 +31,8 @@ simCatSPIM <-
     # Capture individuals
     y=array(0,dim=c(N,J,K))
     if(obstype=="bernoulli"){
-      pd=1-exp(-lamd)
+      if(is.na(p0))stop("must supply p0 for bernoulli obsmod")
+      pd=p0*exp(-D*D/(2*sigma*sigma))
       for(i in 1:N){
         for(j in 1:J){
           for(k in 1:K){
@@ -35,6 +41,7 @@ simCatSPIM <-
         }
       }
     }else if(obstype=="poisson"){
+      if(is.na(lam0))stop("must supply p0 for poisson obsmod")
       for(i in 1:N){
         for(j in 1:J){
           for(k in 1:K){
@@ -157,6 +164,6 @@ simCatSPIM <-
     }
     out<-list(y=y,y.obs=ycap,y.true=y.true,G.true=G.true,G.cap=G.cap,G.obs=G.drop,IDlist=list(n.cat=n.cat,IDcovs=IDcovs),
               IDtrue=IDtrue,X=X,K=K,buff=buff,constraints=constraints,obstype=obstype,s=s,n=nrow(y),
-              this.j=this.j,this.k=this.k,K=K)
+              this.j=this.j,this.k=this.k,K=K,seed=seed)
     return(out)
   }

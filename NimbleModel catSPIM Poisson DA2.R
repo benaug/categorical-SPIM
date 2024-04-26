@@ -2,20 +2,24 @@ NimModel <- nimbleCode({
   #--------------------------------------------------------------
   # priors
   #--------------------------------------------------------------
-  psi ~ dunif(0,1)
-  lam0 ~ dunif(0,10)
-  # sigma ~ dunif(0,100)
-  sigma ~ dgamma(shape=24,rate=8)
+  log(lambda.N) ~ dnorm(0,sd=10) #expected abundance
+  # lam0 ~ dunif(0,10)
+  log(lam0) ~ dnorm(0,sd=10)
+  log(sigma) ~ dnorm(log(3),sd=0.2) #moderately informative, centered roughly around sigma=3
+  # log(sigma) ~ dnorm(0,sd=100) #uninformative prior
+  
   #category level frequencies
-  for(l in 1:n.cat){
-    for(k in 1:n.levels[l]){
-      alpha[l,k] <- 1 #dirichlet prior parameters
+  for(m in 1:n.cat){
+    for(k in 1:n.levels[m]){
+      alpha[m,k] <- 1 #dirichlet prior parameters
     }
-    gammaMat[l,1:n.levels[l]] ~ ddirch(alpha[l,1:n.levels[l]])
+    gammaMat[m,1:n.levels[m]] ~ ddirch(alpha[m,1:n.levels[m]])
   }
   #--------------------------------------------------------------
+  N ~ dpois(lambda.N) #realized abundance
+  #data augmentation "under the hood", jointly update N/z, 
+  #no distribution induced on z, just turns obsmod on/off, used in y.true/ID update
   for(i in 1:M) {
-    z[i] ~ dbern(psi)
     for(m in 1:n.cat){
       G.true[i,m] ~ dcat(gammaMat[m,1:n.levels[m]])
     }
@@ -26,5 +30,4 @@ NimModel <- nimbleCode({
   }
   capcounts[1:M] <- Getcapcounts(y.true=y.true[1:M,1:J])
   n <- Getncap(capcounts=capcounts[1:M],ID=ID[1:n.samples],G.latent=G.latent[1:M,1:n.cat])
-  N <- sum(z[1:M])
 })#model

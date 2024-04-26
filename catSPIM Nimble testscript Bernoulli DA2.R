@@ -1,0 +1,174 @@
+#this versions uses an alternative data augmentation approach that runs faster and allows a poisson
+#prior on N. The model file currently has a moderately informative prior for sigma, centered around
+#sigma=3 (approximately). You can change this to a different informative prior or an uninformative
+#one in the model file
+
+library(nimble)
+library(coda)
+source("simCatSPIM.R")
+source("init.data.CatSPIM.R")
+source("NimbleModel catSPIM Bernoulli DA2.R")
+source("NimbleFunctions catSPIM Bernoulli DA2.R")
+source("sSampler.R")
+
+#If using Nimble version 0.13.1 and you must run this line 
+nimbleOptions(determinePredictiveNodesInModel = FALSE)
+
+#simulate some data
+N <- 140
+p0 <- 0.2
+sigma <- 3 #don't change this unless you change the prior
+K <- 4
+buff <- 9 #state space buffer. Should be at least 3 sigma.
+X <- expand.grid(seq(1,by=sigma,length.out=5),seq(1,by=sigma,length.out=15))
+xlim <- range(X[,1]) + c(-buff,buff)
+ylim <- range(X[,2]) + c(-buff,buff)
+diff(xlim)*diff(ylim) #state space area
+
+#categorical identity covariate stuff
+n.cat <- 2  #number of ID covariates
+gamma <- vector("list",n.cat)
+n.levels <- c(2,5) #Number of levels per ID covariate (sex and coat)
+for(i in 1:n.cat){
+  gamma[[i]] <- rep(1/n.levels[i],n.levels[i]) #generating all equal category level frequencies
+}
+IDcovs <- vector("list",n.cat)
+for(i in 1:length(IDcovs)){
+  IDcovs[[i]] <- 1:n.levels[i]
+}
+pID <- rep(1,n.cat)#sample by covariate level observation probability.  e.g. loci amplification probability
+
+#n.cat=1 with n.levels=1 will produce unmarked SCR data with no ID covariates. 
+#Well, everyone has the same covariate value so they are effectively unmarked
+
+#Simulate some data
+data <- simCatSPIM(N=N,p0=p0,sigma=sigma,K=K,X=X,buff=buff,obstype="bernoulli", #this nimble model set up for bernoulli
+                n.cat=n.cat,pID=pID,gamma=gamma,
+                IDcovs=IDcovs)
+
+#What is the observed data?
+#1) We have occasions and sites for each count member.
+head(data$this.j)
+head(data$this.k)#not used in this sampler for 2D data, but required if using 3D data
+#2) We have partial ID covariates for each count member(0 is missing value)
+head(data$G.obs)
+
+#Data augmentation level
+M <- 600
+
+#trap operation matrix
+J <- nrow(X)
+K1D <- rep(K,J)
+
+#set initial values for category levels
+#Stuff category level probabilities into a ragged matrix.
+gammaMat <- matrix(0,nrow=n.cat,ncol=max(n.levels))
+for(l in 1:n.cat){
+  gammaMat[l,1:n.levels[l]] <- gamma[[l]]
+}
+inits <- list(p0=0.5,sigma=1,gammaMat=gammaMat)#initial values for lam0, sigma, and gammas to build data
+nimbuild <- init.data.catSPIM(data=data,M=M,inits=inits,obstype="bernoulli") #make sure you tell it bernoulli, it's important!
+G.obs.seen <- (data$G.obs!=0) #used in custom update to indicate which are observed
+
+#inits for nimble
+#must initialize N to be sum(z.init) for this data augmentation approach
+Niminits <- list(z=nimbuild$z,N=sum(nimbuild$z),lambda.N=sum(nimbuild$z), #initializing lambda.N at N.init
+                 s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID,capcounts=rowSums(nimbuild$y.true2D),
+                 y.true=nimbuild$y.true2D,G.latent=nimbuild$G.latent,
+                 logit_p0=qlogis(inits$p0),log_sigma=log(inits$sigma),
+                 gammaMat=gammaMat)
+
+#constants for Nimble
+constants <- list(M=M,J=J,K1D=K1D,n.samples=nimbuild$n.samples,n.cat=n.cat,
+                xlim=nimbuild$xlim,ylim=nimbuild$ylim,n.levels=n.levels)
+
+#supply data to nimble
+Nimdata <- list(y.true=matrix(NA,nrow=M,ncol=J),#logit_p0=qlogis(p0),log_sigma=log(sigma),log_lambda.N=log(N),
+              G.true=matrix(NA,nrow=M,ncol=n.cat),ID=rep(NA,nimbuild$n.samples),
+              z=rep(NA,M),X=as.matrix(data$X),capcounts=rep(NA,M))
+
+# set parameters to monitor
+parameters <- c('lambda.N','p0','sigma','N','n','gammaMat')
+
+#can also monitor a different set of parameters with a different thinning rate
+parameters2 <- c("ID")
+nt <- 5 #thinning rate
+nt2 <- 50 #thin more
+
+# Build the model, configure the mcmc, and compile
+start.time <- Sys.time()
+Rmodel <- nimbleModel(code=NimModel, constants=constants, data=Nimdata,check=FALSE,
+                      inits=Niminits)
+#using config nodes for faster configuration skipping nodes we will assign samplers to below
+config.nodes <- c("log_lambda.N","logit_p0","log_sigma","gammaMat")
+# config.nodes <- c()
+conf <- configureMCMC(Rmodel,monitors=parameters, thin=nt, monitors2=parameters2,thin2=nt2,nodes=config.nodes,
+                      useConjugacy = FALSE) 
+
+##Here, we remove the default sampler for y.true
+#and replace it with the custom "IDSampler".
+#can control ID ups per iteration with IDups argument. But not sure that is always the limiting factor
+conf$addSampler(target = paste0("y.true[1:",M,",1:",J,"]"),
+                type = 'IDSampler',control = list(M=M,J=J,K=K,this.j=data$this.j,this.k=data$this.k,
+                                                  n.samples=nimbuild$n.samples,G.obs=data$G.obs,IDups=1,
+                                                  G.obs.seen=G.obs.seen,n.cat=n.cat),
+                silent = TRUE)
+
+
+#replace default G.true sampler, which is not correct, with custom sampler for G.true, "GSampler"
+#2 options. First one is faster, but does not allow other parameters, say lam0 and sigma, to vary
+#as a function of ID covs in G.true
+conf$addSampler(target = paste("G.true[1:",M,",1:",n.cat,"]", sep=""),
+                type = 'GSampler',
+                control = list(M=M,n.cat=n.cat,n.levels=n.levels), silent = TRUE)
+
+z.ups <- round(M*0.5) # how many N/z proposals per iteration? Not sure what is optimal, setting to 50% of M here.
+#nodes used for update
+y.nodes <- Rmodel$expandNodeNames(paste("y.true[1:",M,",1:",J,"]"))
+pd.nodes <- Rmodel$expandNodeNames(paste("pd[1:",M,",1:",J,"]"))
+N.node <- Rmodel$expandNodeNames(paste("N"))
+z.nodes <- Rmodel$expandNodeNames(paste("z[1:",M,"]"))
+calcNodes <- c(N.node,pd.nodes,y.nodes)
+conf$addSampler(target = c("N"),
+                type = 'zSampler',control = list(z.ups=z.ups,M=M,J=J,
+                                                 y.nodes=y.nodes,pd.nodes=pd.nodes,
+                                                 N.node=N.node,z.nodes=z.nodes,
+                                                 calcNodes=calcNodes),silent = TRUE)
+
+
+#can set scale and adaptive=FALSE to try not tuning activity centers. no idea what good scale is though. 1/3 sigma seems OK
+#activity centers hard to tune, but sSampler only does Metropolis Hastings when z=1, so z=0 updates don't lead to suboptimal
+#proposals
+
+for(i in 1:M){
+  conf$addSampler(target = paste("s[",i,", 1:2]", sep=""),
+                  type = 'sSampler',control=list(i=i,xlim=nimbuild$xlim,ylim=nimbuild$ylim,scale=1,adaptive=TRUE),silent = TRUE)
+}
+
+# #use block update for  correlated posteriors. Can use "tries" to control how many times per iteration
+# conf$addSampler(target = c("logit_p0","log_sigma","log_lambda.N"),
+#                 type = 'RW_block',control = list(adaptive=TRUE,tries=5),silent = TRUE)
+
+
+# Build and compile
+Rmcmc <- buildMCMC(conf)
+# runMCMC(Rmcmc,niter=1) #this will run in R, used for better debugging
+Cmodel <- compileNimble(Rmodel)
+Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
+
+# Run the model.
+start.time2 <- Sys.time()
+Cmcmc$run(5000,reset=FALSE) #short run for demonstration. can keep running this line to get more samples
+end.time <- Sys.time()
+end.time-start.time  # total time for compilation, replacing samplers, and fitting
+end.time-start.time2 # post-compilation run time
+
+#modified proposal, using 3D data - swap constrained guys
+
+library(coda)
+mvSamples <- as.matrix(Cmcmc$mvSamples)
+idx <- grep("gamma",colnames(mvSamples)) #can remove gammas from plots if you want to focus on other parameters (can be a lot of them)
+plot(mcmc(mvSamples[500:nrow(mvSamples),-idx]))
+
+#n is number of individuals captured. True value:
+data$n
