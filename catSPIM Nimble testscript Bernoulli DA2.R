@@ -122,7 +122,7 @@ conf$addSampler(target = paste("G.true[1:",M,",1:",n.cat,"]", sep=""),
                 type = 'GSampler',
                 control = list(M=M,n.cat=n.cat,n.levels=n.levels), silent = TRUE)
 
-z.ups <- round(M*0.5) # how many N/z proposals per iteration? Not sure what is optimal, setting to 50% of M here.
+z.ups <- round(M*0.25) # how many N/z proposals per iteration? Not sure what is optimal, setting to 25% of M here.
 #nodes used for update
 y.nodes <- Rmodel$expandNodeNames(paste("y.true[1:",M,",1:",J,"]"))
 pd.nodes <- Rmodel$expandNodeNames(paste("pd[1:",M,",1:",J,"]"))
