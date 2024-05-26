@@ -1,14 +1,13 @@
 # categorical-SPIM
 
-Nimble sampler for categorical SPIM from "Spatial capture–recapture for categorically marked populations with an application to genetic capture–recapture"
+Nimble MCMC samplers for categorical SPIM from "Spatial capture–recapture for categorically marked populations with an application to genetic capture–recapture"
 
 https://esajournals.onlinelibrary.wiley.com/doi/full/10.1002/ecs2.2627
 
-Currently, only the Poisson and Negative Binomial observation models are supported without any occasion-level or behavioral response effects. The code is set up for multiple categorical ID covariates, but can be tricked into using just 1 without changing the Nimble code. See test scripts.
+There are two data augmentation approaches, 1) regular data augmentation as used in the original paper and 2) an alternative that allows a Poisson prior on expected abundance (DA2 in file names). The latter allows faster N/z updates.
 
-The custom nimble functions allow trap effects, though the BUGS code should probably be devectorized across traps when doing that. The categorical partial ID covariates can be used an individual covariates on other parameters, say lam0 or sigma, only if you use "Gsampler2".
+There are 4 observation models, 1) Poisson, 2) Bernoulli, 3) negative binomial, and 4) zero-truncated Poisson hurdle. Currently, 3 is only available with regular data augmentation and 2 and 4 are only available with DA2. The negative binomial requires "better data" to work well, i.e., more partial ID inforomation and/or less home range overlap.
 
-The negative binomial observation model will require "better data" in order to estimate the overdispersion parameter, i.e., more partial ID information and/or less home range overlap. This sampler demonstrates why I've set up the custom ID update the way I have. Using the Poisson observation model, catSPIM can be written in BUGS code without the custom ID update by specifying the *independent* sample-level likelihoods. However, once you switch to any other observation model, you cannot do this. The Metropolis-Hastings update used in the negative binomial sampler will work with any observation model (assuming you switch in the correct likelihood in the custom update).
+All scripts are set up for >1 ID covariate except there is a Poisson version that allows just 1. Other scripts can be set up for just 1 in the same way.
 
-
-4/26/24 addition: I added two new samplers, one for Poisson data using an alternative data augmentation scheme that is faster and allows a Poisson prior on N. The other is for a Bernoulli observation model, which is likely rarely appropriate. It also uses this alternative data augmentation.
+See test scripts and then the files loaded inside test scrips, e.g., model files, data simulator, data initializer, nimble functions/custom updates.
