@@ -1,12 +1,20 @@
-#this versions uses an alternative data augmentation approach that runs faster and allows a poisson
+#This script uses a hurdle zero-truncated Poisson observation model
+#This is a model where 1) detection is a function of distance from activity center
+#and 2) given detection, counts follow a zero-truncated Poisson with a fixed lambda
+#parameter that is not a function of distance from the activity center.
+#We assume y.det[i,j,k] ~ Bernoulli(pd[i,j]) and
+# y.count[i,j,k] ~ ZTPois(lambda*y.det[i,j,k]) (lambda is zeroed out if no detection)
+#To fit the model, we marginalize over y.det.
+
+#this version uses an alternative data augmentation approach that runs faster and allows a poisson
 #prior on N.
 
 library(nimble)
 library(coda)
 source("simCatSPIM.R")
 source("init.data.CatSPIM.R")
-source("NimbleModel catSPIM Bernoulli DA2.R")
-source("NimbleFunctions catSPIM Bernoulli DA2.R")
+source("NimbleModel catSPIM hurdleZTPois DA2.R")
+source("NimbleFunctions catSPIM hurdleZTPois DA2.R")
 source("sSampler.R")
 
 #If using Nimble version 0.13.1 and you must run this line 
@@ -14,9 +22,10 @@ nimbleOptions(determinePredictiveNodesInModel = FALSE)
 
 #simulate some data
 N <- 75
-p0 <- 0.25
+p0 <- 0.25 #baseline detection probability
+lambda <- 0.25 #count parameter given detection
 sigma <- 0.5
-K <- 10
+K <- 10 #number of occasions
 buff <- 3 #state space buffer. Should be at least 3 sigma.
 X <- expand.grid(3:11,3:11)
 xlim <- range(X[,1]) + c(-buff,buff)
@@ -40,7 +49,7 @@ pID <- rep(1,n.cat)#sample by covariate level observation probability.  e.g. loc
 #Well, everyone has the same covariate value so they are effectively unmarked
 
 #Simulate some data
-data <- simCatSPIM(N=N,p0=p0,sigma=sigma,K=K,X=X,buff=buff,obstype="bernoulli", #this nimble model set up for bernoulli
+data <- simCatSPIM(N=N,p0=p0,lambda=lambda,sigma=sigma,K=K,X=X,buff=buff,obstype="hurdleZTPois", #this nimble model set up for hurdleZTPois
                 n.cat=n.cat,pID=pID,gamma=gamma,
                 IDcovs=IDcovs)
 
@@ -56,7 +65,7 @@ M <- 250
 
 #trap operation matrix
 J <- nrow(X)
-K1D <- rep(K,J)
+K2D <- matrix(1,J,K) #2 dimensional. Must be either 0 or 1.
 
 #set initial values for category levels
 #Stuff category level probabilities into a ragged matrix.
@@ -64,29 +73,29 @@ gammaMat <- matrix(0,nrow=n.cat,ncol=max(n.levels))
 for(l in 1:n.cat){
   gammaMat[l,1:n.levels[l]] <- gamma[[l]]
 }
-inits <- list(p0=0.5,sigma=1,gammaMat=gammaMat)#initial values for lam0, sigma, and gammas to build data
-nimbuild <- init.data.catSPIM(data=data,M=M,inits=inits,obstype="bernoulli") #make sure you tell it bernoulli, it's important!
+inits <- list(p0=0.5,lambda=1,sigma=1,gammaMat=gammaMat)#ballpark initial values for lam0, sigma, and gammas to build data
+nimbuild <- init.data.catSPIM(data=data,M=M,inits=inits,obstype="hurdleZTPois")
 G.obs.seen <- (data$G.obs!=0) #used in custom update to indicate which are observed
 
 #inits for nimble
 Niminits <- list(z=nimbuild$z,N=sum(nimbuild$z),#must initialize N to be sum(z.init) for this data augmentation approach
-                 lambda.N=sum(nimbuild$z), #initializing lambda.N to be consistent with N.init
-                 s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID,capcounts=rowSums(nimbuild$y.true2D),
-                 y.true=nimbuild$y.true2D,G.latent=nimbuild$G.latent,
-                 logit_p0=qlogis(inits$p0),sigma=inits$sigma,
+                 lambda.N=sum(nimbuild$z), #initializing lambda.N at to be consistent with N init
+                 s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID,capcounts=rowSums(nimbuild$y.true3D),
+                 y.true=nimbuild$y.true3D,G.latent=nimbuild$G.latent,
+                 logit_p0=qlogis(inits$p0),sigma=inits$sigma,lambda=inits$lambda,
                  gammaMat=gammaMat)
 
 #constants for Nimble
-constants <- list(M=M,J=J,K1D=K1D,n.samples=nimbuild$n.samples,n.cat=n.cat,
+constants <- list(M=M,J=J,K=K,K2D=K2D,n.samples=nimbuild$n.samples,n.cat=n.cat,
                 xlim=nimbuild$xlim,ylim=nimbuild$ylim,n.levels=n.levels)
 
 #supply data to nimble
-Nimdata <- list(y.true=matrix(NA,nrow=M,ncol=J),#logit_p0=qlogis(p0),log_sigma=log(sigma),log_lambda.N=log(N),
+Nimdata <- list(y.true=array(NA,dim=c(M,J,K)),
               G.true=matrix(NA,nrow=M,ncol=n.cat),ID=rep(NA,nimbuild$n.samples),
               z=rep(NA,M),X=as.matrix(data$X),capcounts=rep(NA,M))
 
 # set parameters to monitor
-parameters <- c('lambda.N','p0','sigma','N','n','gammaMat')
+parameters <- c('lambda.N','p0','lambda','sigma','N','n','gammaMat')
 
 #can also monitor a different set of parameters with a different thinning rate
 parameters2 <- c("ID")
@@ -98,7 +107,7 @@ start.time <- Sys.time()
 Rmodel <- nimbleModel(code=NimModel, constants=constants, data=Nimdata,check=FALSE,
                       inits=Niminits)
 #using config nodes for faster configuration skipping nodes we will assign samplers to below
-config.nodes <- c("lambda.N","logit_p0","sigma","gammaMat")
+config.nodes <- c("lambda.N","logit_p0","sigma","lambda","gammaMat")
 # config.nodes <- c()
 conf <- configureMCMC(Rmodel,monitors=parameters, thin=nt, monitors2=parameters2,thin2=nt2,nodes=config.nodes,
                       useConjugacy = FALSE) 
@@ -106,7 +115,7 @@ conf <- configureMCMC(Rmodel,monitors=parameters, thin=nt, monitors2=parameters2
 ##Here, we remove the default sampler for y.true
 #and replace it with the custom "IDSampler".
 #can control ID ups per iteration with IDups argument. But not sure that is always the limiting factor
-conf$addSampler(target = paste0("y.true[1:",M,",1:",J,"]"),
+conf$addSampler(target = paste0("y.true[1:",M,",1:",J,",1:",K,"]"),
                 type = 'IDSampler',control = list(M=M,J=J,K=K,this.j=data$this.j,this.k=data$this.k,
                                                   n.samples=nimbuild$n.samples,G.obs=data$G.obs,IDups=1,
                                                   G.obs.seen=G.obs.seen,n.cat=n.cat),
@@ -122,7 +131,7 @@ conf$addSampler(target = paste("G.true[1:",M,",1:",n.cat,"]", sep=""),
 
 z.ups <- round(M*0.25) # how many N/z proposals per iteration? Not sure what is optimal, setting to 25% of M here.
 #nodes used for update
-y.nodes <- Rmodel$expandNodeNames(paste("y.true[1:",M,",1:",J,"]"))
+y.nodes <- Rmodel$expandNodeNames(paste("y.true[1:",M,",1:",J,",1:",K,"]"))
 pd.nodes <- Rmodel$expandNodeNames(paste("pd[1:",M,",1:",J,"]"))
 N.node <- Rmodel$expandNodeNames(paste("N"))
 z.nodes <- Rmodel$expandNodeNames(paste("z[1:",M,"]"))
@@ -167,6 +176,5 @@ idx <- grep("gamma",colnames(mvSamples)) #can remove gammas from plots if you wa
 plot(mcmc(mvSamples[200:nrow(mvSamples),-idx]))
 
 cor(mcmc(mvSamples[200:nrow(mvSamples),-idx]))
-
 #n is number of individuals captured. True value:
 data$n

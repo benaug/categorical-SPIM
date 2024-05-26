@@ -123,8 +123,37 @@ init.data.catSPIM <- function(data=NA,M=NA,inits=inits,obstype="poisson"){
     lam0 <- inits$lam0
     lamd <- lam0*exp(-D*D/(2*sigma*sigma))
     ll.y <- dpois(y.true2D,K*lamd*z,log=TRUE)
+  }else if(obstype=="negbin"){
+    lam0 <- inits$lam0
+    theta <- inits$theta
+    lamd <- lam0*exp(-D*D/(2*sigma*sigma))
+    ll.y <- y.true2D*0
+    for(i in 1:M){
+      if(z[i]==1){
+        ll.y[i,] <- dnbinom(y.true2D[i,],mu=lamd[i,],size=theta*K,log=TRUE)
+      }
+    }
+  }else if(obstype=="hurdleZTPois"){
+    p0 <- inits$p0
+    lambda <- inits$lambda
+    pd <- p0*exp(-D*D/(2*sigma*sigma))
+    ll.y <- y.true*0
+    for(i in 1:M){
+      if(z[i]==1){
+        for(j in 1:J){
+          for(k in 1:K){
+            if(y.true[i,j,k]==0){
+              ll.y[i,j,k] <- log(1-pd[i,j])
+            }else{
+              ll.y[i,j,k] <- log(pd[i,j]) + log(dpois(y.true[i,j,k],lambda=lambda)/(1-exp(-lambda)))
+            }
+          }
+        }
+      }
+    }
+  }else{
+    stop("obstype not recognized")
   }
-  if(!is.finite(sum(ll.y)))stop("Starting obs model likelihood is not finite")
   
   #Initialize G.true
   G.true <- matrix(0, nrow=M,ncol=n.cat)

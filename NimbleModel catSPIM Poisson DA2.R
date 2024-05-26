@@ -2,12 +2,9 @@ NimModel <- nimbleCode({
   #--------------------------------------------------------------
   # priors
   #--------------------------------------------------------------
-  log(lambda.N) ~ dnorm(0,sd=10) #expected abundance
-  # lam0 ~ dunif(0,10)
-  log(lam0) ~ dnorm(0,sd=10)
-  log(sigma) ~ dnorm(log(3),sd=0.2) #moderately informative, centered roughly around sigma=3
-  # log(sigma) ~ dnorm(0,sd=100) #uninformative prior
-  
+  lambda.N ~ dunif(0,1000) #expected abundance
+  lam0 ~ dunif(0,10) #baseline detection rate
+  sigma ~ dunif(0,10) #detection spatial scale parameter
   #category level frequencies
   for(m in 1:n.cat){
     for(k in 1:n.levels[m]){

@@ -1,7 +1,5 @@
 #this versions uses an alternative data augmentation approach that runs faster and allows a poisson
-#prior on N. The model file currently has a moderately informative prior for sigma, centered around
-#sigma=3 (approximately). You can change this to a different informative prior or an uninformative
-#one in the model file
+#prior on N.
 
 library(nimble)
 library(coda)
@@ -15,15 +13,16 @@ source("sSampler.R")
 nimbleOptions(determinePredictiveNodesInModel = FALSE)
 
 #simulate some data
-N <- 140
-lam0 <- 0.2
-sigma <- 3 #don't change this unless you change the prior
-K <- 4
-buff <- 9 #state space buffer. Should be at least 3 sigma.
-X <- expand.grid(seq(1,by=sigma,length.out=5),seq(1,by=sigma,length.out=15))
+N <- 75
+lam0 <- 0.25
+sigma <- 0.5
+K <- 10 #number of occasions
+buff <- 3 #state space buffer. Should be at least 3 sigma.
+X <- expand.grid(3:11,3:11)
 xlim <- range(X[,1]) + c(-buff,buff)
 ylim <- range(X[,2]) + c(-buff,buff)
 diff(xlim)*diff(ylim) #state space area
+
 
 #categorical identity covariate stuff
 n.cat <- 2  #number of ID covariates
@@ -54,7 +53,7 @@ head(data$this.k)#not used in this sampler for 2D data, but required if using 3D
 head(data$G.obs)
 
 #Data augmentation level
-M <- 600
+M <- 250
 
 #trap operation matrix
 J <- nrow(X)
@@ -71,10 +70,10 @@ nimbuild <- init.data.catSPIM(data=data,M=M,inits=inits)
 G.obs.seen <- (data$G.obs!=0) #used in custom update to indicate which are observed
 
 #inits for nimble
-#must initialize N to be sum(z.init) for this data augmentation approach
-Niminits <- list(z=nimbuild$z,N=sum(nimbuild$z),lambda.N=sum(nimbuild$z), #initializing lambda.N at N.init
+Niminits <- list(z=nimbuild$z,N=sum(nimbuild$z),#must initialize N to be sum(z.init) for this data augmentation approach
+                 lambda.N=sum(nimbuild$z), #initializing lambda.N at N.init
                  s=nimbuild$s,G.true=nimbuild$G.true,ID=nimbuild$ID,capcounts=rowSums(nimbuild$y.true2D),
-                 y.true=nimbuild$y.true2D,G.latent=nimbuild$G.latent,log_lam0=log(inits$lam0),log_sigma=log(inits$sigma),
+                 y.true=nimbuild$y.true2D,G.latent=nimbuild$G.latent,lam0=inits$lam0,sigma=inits$sigma,
                  gammaMat=gammaMat)
 
 #constants for Nimble
@@ -99,7 +98,7 @@ start.time <- Sys.time()
 Rmodel <- nimbleModel(code=NimModel, constants=constants, data=Nimdata,check=FALSE,
                       inits=Niminits)
 #using config nodes for faster configuration skipping nodes we will assign samplers to below
-config.nodes <- c("log_lambda.N","log_lam0","log_sigma","gammaMat")
+config.nodes <- c("lambda.N","lam0","sigma","gammaMat")
 conf <- configureMCMC(Rmodel,monitors=parameters, thin=nt, monitors2=parameters2,thin2=nt2,nodes=config.nodes,
                       useConjugacy = FALSE) 
 
@@ -143,8 +142,8 @@ for(i in 1:M){
 }
 
 #use block update for  correlated posteriors. Can use "tries" to control how many times per iteration
-conf$addSampler(target = c("log_lam0","log_sigma","log_lambda.N"),
-                type = 'RW_block',control = list(adaptive=TRUE,tries=5),silent = TRUE)
+conf$addSampler(target = c("lam0","sigma","lambda.N"),
+                type = 'RW_block',control = list(adaptive=TRUE,tries=1),silent = TRUE)
 
 
 # Build and compile
@@ -155,7 +154,7 @@ Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
 
 # Run the model.
 start.time2 <- Sys.time()
-Cmcmc$run(2000,reset=FALSE) #short run for demonstration. can keep running this line to get more samples
+Cmcmc$run(5000,reset=FALSE) #short run for demonstration. can keep running this line to get more samples
 end.time <- Sys.time()
 end.time-start.time  # total time for compilation, replacing samplers, and fitting
 end.time-start.time2 # post-compilation run time
@@ -163,7 +162,9 @@ end.time-start.time2 # post-compilation run time
 library(coda)
 mvSamples <- as.matrix(Cmcmc$mvSamples)
 idx <- grep("gamma",colnames(mvSamples)) #can remove gammas from plots if you want to focus on other parameters (can be a lot of them)
-plot(mcmc(mvSamples[20:nrow(mvSamples),-idx]))
+plot(mcmc(mvSamples[200:nrow(mvSamples),-idx]))
+
+cor(mcmc(mvSamples[200:nrow(mvSamples),-idx]))
 
 #n is number of individuals captured. True value:
 data$n
