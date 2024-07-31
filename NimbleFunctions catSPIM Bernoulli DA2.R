@@ -78,6 +78,7 @@ IDSampler <- nimbleFunction(
     K <- control$K
     G.obs <- control$G.obs
     G.obs.seen <- control$G.obs.seen
+    IDups <- control$IDups
     calcNodes <- model$getDependencies(target)
   },
 
@@ -107,84 +108,86 @@ IDSampler <- nimbleFunction(
     ll.y.cand <- ll.y
     ID.cand <- ID.curr
     y.true.cand <- y.true
-    for(l in 1:n.samples){ #loop over samples
-      #proposal distribution
-      propprobs <- model$pd[1:M,this.j[l]]*z[1:M]
-      #zero out propprobs for individuals whose G.true conflict with G.obs
-      #this prevents assigning samples to individuals that do not match cov values
-      idx2 <- which(G.obs.seen[l,])#which indices of this G.obs are not missing values?
-      if(length(idx2)>1){#multiple loci observed
-        match <- nimLogical(M,TRUE) #start with all true, remove conflicts loci by loci
-        for(l2 in 1:length(idx2)){#loop through observed loci for sample l
-          match <- match[1:M]&(G.true[1:M,idx2[l2]]==G.obs[l,idx2[l2]])
+    for(up in 1:IDups){
+      for(l in 1:n.samples){ #loop over samples
+        #proposal distribution
+        propprobs <- model$pd[1:M,this.j[l]]*z[1:M]
+        #zero out propprobs for individuals whose G.true conflict with G.obs
+        #this prevents assigning samples to individuals that do not match cov values
+        idx2 <- which(G.obs.seen[l,])#which indices of this G.obs are not missing values?
+        if(length(idx2)>1){#multiple loci observed
+          match <- nimLogical(M,TRUE) #start with all true, remove conflicts loci by loci
+          for(l2 in 1:length(idx2)){#loop through observed loci for sample l
+            match <- match[1:M]&(G.true[1:M,idx2[l2]]==G.obs[l,idx2[l2]])
+          }
+          possible <- match
+        }else if(length(idx2)==1){#single loci observed
+          possible <-G.true[1:M,idx2[1]]==G.obs[l,idx2[1]]
+        }else{#fully latent G.obs
+          possible <- nimLogical(M,TRUE) #Can match anyone with z==1
         }
-        possible <- match
-      }else if(length(idx2)==1){#single loci observed
-        possible <-G.true[1:M,idx2[1]]==G.obs[l,idx2[1]]
-      }else{#fully latent G.obs
-        possible <- nimLogical(M,TRUE) #Can match anyone with z==1
-      }
-      #remove individuals whose G.true conflicts with this G.obs
-      rem <- which(!possible)
-      if(length(rem)>0){
-        propprobs[rem] <- 0
-      }
-      
-      sumpropprobs <- sum(propprobs)
-      propprobs <- propprobs/sumpropprobs
-      ID.cand[l] <- rcat(1,prob=propprobs)
-      if(ID.cand[l]!=ID.curr[l]){
-        swapped <- c(ID.curr[l],ID.cand[l])
-        #new sample proposal probabilities
-        forprob <- propprobs[swapped[2]]
-        backprob <- propprobs[swapped[1]]
-        
-        #does cand guy have a sample at this j-k already?
-        occupied <- sum(ID.curr==ID.cand[l]&this.j==this.j[l]&this.k==this.k[l])==1
-        if(occupied){ #swap samples, y.true and likelihood don't change
-          #need to exchange this sample with focal guy
-          swap2 <- which(ID.curr==ID.cand[l]&this.j==this.j[l]&this.k==this.k[l])
-          ID.cand[swap2] <- ID.curr[l]
-        }else{
-          #new y.true's - move sample from ID to ID.cand
-          y.true.cand[ID.curr[l],this.j[l],this.k[l]] <- y.true[ID.curr[l],this.j[l],this.k[l]] - 1
-          y.true.cand[ID.cand[l],this.j[l],this.k[l]] <- y.true[ID.cand[l],this.j[l],this.k[l]] + 1
+        #remove individuals whose G.true conflicts with this G.obs
+        rem <- which(!possible)
+        if(length(rem)>0){
+          propprobs[rem] <- 0
         }
         
-        ll.y.cand[swapped[1],this.j[l],this.k[l]] <- dbinom(y.true.cand[swapped[1],this.j[l],this.k[l]],size=1,prob=model$pd[swapped[1],this.j[l]],log=TRUE)
-        ll.y.cand[swapped[2],this.j[l],this.k[l]] <- dbinom(y.true.cand[swapped[2],this.j[l],this.k[l]],size=1,prob=model$pd[swapped[2],this.j[l]],log=TRUE)
-        
-        #select sample to move proposal probabilities
-        focalprob <- sum(ID.curr==swapped[1]&this.j==this.j[l]&this.k==this.k[l])/n.samples
-        focalbackprob <- sum(ID.cand==swapped[2]&this.j==this.j[l]&this.k==this.k[l])/n.samples
-        
-        #sum log likelihoods and do MH step
-        lp_initial <- ll.y[swapped[1],this.j[l],this.k[l]] + ll.y[swapped[2],this.j[l],this.k[l]]
-        lp_proposed <- ll.y.cand[swapped[1],this.j[l],this.k[l]] + ll.y.cand[swapped[2],this.j[l],this.k[l]]
-        log_MH_ratio <- (lp_proposed+log(backprob)+log(focalbackprob)) - (lp_initial+log(forprob)+log(focalprob))
-        
-        accept <- decide(log_MH_ratio)
-        if(accept){
-          y.true[swapped[1],this.j[l],this.k[l]] <- y.true.cand[swapped[1],this.j[l],this.k[l]]
-          y.true[swapped[2],this.j[l],this.k[l]] <- y.true.cand[swapped[2],this.j[l],this.k[l]]
-          ll.y[swapped[1],this.j[l],this.k[l]] <- ll.y.cand[swapped[1],this.j[l],this.k[l]]
-          ll.y[swapped[2],this.j[l],this.k[l]] <- ll.y.cand[swapped[2],this.j[l],this.k[l]]
-          ID.curr[l] <- ID.cand[l]
-          if(occupied){
-            ID.curr[swap2] <- ID.cand[swap2]
+        sumpropprobs <- sum(propprobs)
+        propprobs <- propprobs/sumpropprobs
+        ID.cand[l] <- rcat(1,prob=propprobs)
+        if(ID.cand[l]!=ID.curr[l]){
+          swapped <- c(ID.curr[l],ID.cand[l])
+          #new sample proposal probabilities
+          forprob <- propprobs[swapped[2]]
+          backprob <- propprobs[swapped[1]]
+          
+          #does cand guy have a sample at this j-k already?
+          occupied <- sum(ID.curr==ID.cand[l]&this.j==this.j[l]&this.k==this.k[l])==1
+          if(occupied){ #swap samples, y.true and likelihood don't change
+            #need to exchange this sample with focal guy
+            swap2 <- which(ID.curr==ID.cand[l]&this.j==this.j[l]&this.k==this.k[l])
+            ID.cand[swap2] <- ID.curr[l]
+          }else{
+            #new y.true's - move sample from ID to ID.cand
+            y.true.cand[ID.curr[l],this.j[l],this.k[l]] <- y.true[ID.curr[l],this.j[l],this.k[l]] - 1
+            y.true.cand[ID.cand[l],this.j[l],this.k[l]] <- y.true[ID.cand[l],this.j[l],this.k[l]] + 1
+          }
+          
+          ll.y.cand[swapped[1],this.j[l],this.k[l]] <- dbinom(y.true.cand[swapped[1],this.j[l],this.k[l]],size=1,prob=model$pd[swapped[1],this.j[l]],log=TRUE)
+          ll.y.cand[swapped[2],this.j[l],this.k[l]] <- dbinom(y.true.cand[swapped[2],this.j[l],this.k[l]],size=1,prob=model$pd[swapped[2],this.j[l]],log=TRUE)
+          
+          #select sample to move proposal probabilities
+          focalprob <- sum(ID.curr==swapped[1]&this.j==this.j[l]&this.k==this.k[l])/n.samples
+          focalbackprob <- sum(ID.cand==swapped[2]&this.j==this.j[l]&this.k==this.k[l])/n.samples
+          
+          #sum log likelihoods and do MH step
+          lp_initial <- ll.y[swapped[1],this.j[l],this.k[l]] + ll.y[swapped[2],this.j[l],this.k[l]]
+          lp_proposed <- ll.y.cand[swapped[1],this.j[l],this.k[l]] + ll.y.cand[swapped[2],this.j[l],this.k[l]]
+          log_MH_ratio <- (lp_proposed+log(backprob)+log(focalbackprob)) - (lp_initial+log(forprob)+log(focalprob))
+          
+          accept <- decide(log_MH_ratio)
+          if(accept){
+            y.true[swapped[1],this.j[l],this.k[l]] <- y.true.cand[swapped[1],this.j[l],this.k[l]]
+            y.true[swapped[2],this.j[l],this.k[l]] <- y.true.cand[swapped[2],this.j[l],this.k[l]]
+            ll.y[swapped[1],this.j[l],this.k[l]] <- ll.y.cand[swapped[1],this.j[l],this.k[l]]
+            ll.y[swapped[2],this.j[l],this.k[l]] <- ll.y.cand[swapped[2],this.j[l],this.k[l]]
+            ID.curr[l] <- ID.cand[l]
+            if(occupied){
+              ID.curr[swap2] <- ID.cand[swap2]
+            }
+          }else{ #set back
+            y.true.cand[swapped[1],this.j[l],this.k[l]] <- y.true[swapped[1],this.j[l],this.k[l]]
+            y.true.cand[swapped[2],this.j[l],this.k[l]] <- y.true[swapped[2],this.j[l],this.k[l]]
+            ll.y.cand[swapped[1],this.j[l],this.k[l]] <- ll.y[swapped[1],this.j[l],this.k[l]]
+            ll.y.cand[swapped[2],this.j[l],this.k[l]] <- ll.y[swapped[2],this.j[l],this.k[l]]
+            ID.cand[l] <- ID.curr[l]
+            if(occupied){
+              ID.cand[swap2] <- ID.curr[swap2]
+            }
           }
         }else{ #set back
-          y.true.cand[swapped[1],this.j[l],this.k[l]] <- y.true[swapped[1],this.j[l],this.k[l]]
-          y.true.cand[swapped[2],this.j[l],this.k[l]] <- y.true[swapped[2],this.j[l],this.k[l]]
-          ll.y.cand[swapped[1],this.j[l],this.k[l]] <- ll.y[swapped[1],this.j[l],this.k[l]]
-          ll.y.cand[swapped[2],this.j[l],this.k[l]] <- ll.y[swapped[2],this.j[l],this.k[l]]
           ID.cand[l] <- ID.curr[l]
-          if(occupied){
-            ID.cand[swap2] <- ID.curr[swap2]
-          }
         }
-      }else{ #set back
-        ID.cand[l] <- ID.curr[l]
       }
     }
     #Now update G.latent. G.latent determines which G.true can be updated later.
