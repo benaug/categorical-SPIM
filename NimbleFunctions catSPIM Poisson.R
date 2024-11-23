@@ -35,8 +35,8 @@ dPoissonVector <- nimbleFunction(
 rPoissonVector <- nimbleFunction(
   run = function(n = integer(0),lam = double(1),z = double(0)) {
     returnType(double(1))
-    J=nimDim(lam)[1]
-    out=numeric(J,value=0)
+    J <- nimDim(lam)[1]
+    out <- numeric(J,value=0)
     return(out)
   }
 )
@@ -72,11 +72,11 @@ Getncap <- nimbleFunction(
 IDSampler <- nimbleFunction(
   contains = sampler_BASE,
   setup = function(model, mvSaved, target, control) {
-    this.j<-control$this.j
-    G.obs<-control$G.obs
-    G.obs.seen<-control$G.obs.seen
+    this.j <- control$this.j
+    G.obs <- control$G.obs
+    G.obs.seen <- control$G.obs.seen
     trapup <- control$trapup
-    M<-control$M
+    M <- control$M
     J <- control$J
     n.cat <- control$n.cat
     calcNodes <- model$getDependencies(target)
@@ -108,7 +108,7 @@ IDSampler <- nimbleFunction(
         #remove individuals whose G.true conflicts with this G.obs
         rem=which(!possible)
         if(length(rem)>0){
-          lam.use[rem]<-0
+          lam.use[rem] <- 0
         }
         #full conditional for identity update
         fullcond <- lam.use/sum(lam.use)
@@ -129,7 +129,7 @@ IDSampler <- nimbleFunction(
     for(i in 1:length(model$ID)){
       for(l in 1:n.cat){
         if(G.obs[i,l]!=0){
-          G.true.tmp[model$ID[i],l]=G.obs[i,l]
+          G.true.tmp[model$ID[i],l] <- G.obs[i,l]
         }
       }
     }

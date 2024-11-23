@@ -2,9 +2,9 @@ sSampler <- nimbleFunction(
   # name = 'sampler_RW',
   contains = sampler_BASE,
   setup = function(model, mvSaved, target, control) {
-    i<-control$i    
-    xlim<-control$xlim
-    ylim<-control$ylim
+    i <- control$i    
+    xlim <- control$xlim
+    ylim <- control$ylim
     ## control list extraction
     # logScale            <- extractControlElement(control, 'log',                 FALSE)
     # reflective          <- extractControlElement(control, 'reflective',          FALSE)
@@ -58,7 +58,7 @@ sSampler <- nimbleFunction(
         } else {
           copy(from = mvSaved, to = model, row = 1, nodes = calcNodes, logProb = TRUE)
         }
-        if(adaptive){ #we only tune for z=0 proposals
+        if(adaptive){ #we only tune for z=1 proposals
           adaptiveProcedure(accept)
         }
       }

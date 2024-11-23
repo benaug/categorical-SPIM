@@ -32,7 +32,7 @@ rPoissonVector <- nimbleFunction(
   run = function(n = integer(0),lam = double(1),z = double(0)) {
     returnType(double(1))
     J <- nimDim(lam)[1]
-    out=numeric(J,value=0)
+    out <- numeric(J,value=0)
     return(out)
   }
 )
@@ -42,9 +42,9 @@ Getcapcounts <- nimbleFunction(
     returnType(double(1))
     M <- nimDim(y.true)[1]
     J <- nimDim(y.true)[2]
-    capcounts=numeric(M, value = 0)
+    capcounts <- numeric(M, value = 0)
     for(i in 1:M){
-      capcounts[i]=sum(y.true[i,1:J])
+      capcounts[i] <- sum(y.true[i,1:J])
     }
     return(capcounts)
   }
@@ -106,7 +106,7 @@ IDSampler <- nimbleFunction(
           #remove individuals whose G.true conflicts with this G.obs
           rem <- which(!possible)
           if(length(rem)>0){
-            lam.use[rem]<-0
+            lam.use[rem] <- 0
           }
           #full conditional for identity update
           fullcond <- lam.use/sum(lam.use)
@@ -128,7 +128,7 @@ IDSampler <- nimbleFunction(
     for(i in 1:length(model$ID)){
       for(l in 1:n.cat){
         if(G.obs[i,l]!=0){
-          G.true.tmp[model$ID[i],l]=G.obs[i,l]
+          G.true.tmp[model$ID[i],l] <- G.obs[i,l]
         }
       }
     }

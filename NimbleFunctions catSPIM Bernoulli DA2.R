@@ -32,7 +32,7 @@ rBernoulliVector <- nimbleFunction(
   run = function(n = integer(0),pd = double(1), K1D = double(1), z = double(0)) {
     returnType(double(1))
     J <- nimDim(pd)[1]
-    out=numeric(J,value=0)
+    out <- numeric(J,value=0)
     return(out)
   }
 )
@@ -42,9 +42,9 @@ Getcapcounts <- nimbleFunction(
     returnType(double(1))
     M <- nimDim(y.true)[1]
     J <- nimDim(y.true)[2]
-    capcounts=numeric(M, value = 0)
+    capcounts <- numeric(M, value = 0)
     for(i in 1:M){
-      capcounts[i]=sum(y.true[i,1:J])
+      capcounts[i] <- sum(y.true[i,1:J])
     }
     return(capcounts)
   }
@@ -122,7 +122,7 @@ IDSampler <- nimbleFunction(
           }
           possible <- match
         }else if(length(idx2)==1){#single loci observed
-          possible <-G.true[1:M,idx2[1]]==G.obs[l,idx2[1]]
+          possible <- G.true[1:M,idx2[1]]==G.obs[l,idx2[1]]
         }else{#fully latent G.obs
           possible <- nimLogical(M,TRUE) #Can match anyone with z==1
         }

@@ -83,8 +83,8 @@ parameters <- c('psi','lam0','sigma','N','n','gammaMat')
 
 #can also monitor a different set of parameters with a different thinning rate
 parameters2 <- c("ID")
-nt=1 #thinning rate
-nt2=50#thin more
+nt <- 1 #thinning rate
+nt2 <- 50#thin more
 
 # Build the model, configure the mcmc, and compile
 start.time <- Sys.time()
