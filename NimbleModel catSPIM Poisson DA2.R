@@ -25,6 +25,8 @@ NimModel <- nimbleCode({
     lam[i,1:J] <- GetDetectionRate(s = s[i,1:2], X = X[1:J,1:2], J=J,sigma=sigma, lam0=lam0, z=z[i])
     y.true[i,1:J] ~ dPoissonVector(lam=lam[i,1:J]*K1D[1:J],z=z[i]) #vectorized obs mod
   }
-  capcounts[1:M] <- Getcapcounts(y.true=y.true[1:M,1:J])
-  n <- Getncap(capcounts=capcounts[1:M],ID=ID[1:n.samples],G.latent=G.latent[1:M,1:n.cat])
+  #calculate number of inds captured and abundance
+  capcounts[1:M] <- Getcapcounts(ID=ID[1:n.samples],M=M) #intermediate object
+  #must use G.latent somewhere to make nimble happy. Sticking it here, not used in function.
+  n <- Getncap(capcounts=capcounts[1:M],G.latent=G.latent[1:M,1:n.cat])
 })#model
