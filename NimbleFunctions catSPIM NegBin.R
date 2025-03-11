@@ -95,16 +95,15 @@ IDSampler <- nimbleFunction(
       if(z[i]==1){
         for(j in 1:J){
           #if theta is a function of individual or trap covariates, need to fix the line below, e.g., size=model$theta[i,j]*model$K1D[j]
-          ll.y[i,j] <-  dnbinom(y.true[i,j],size=model$theta[1]*model$K1D[j],prob=model$p[i,j], log = TRUE)
+          ll.y[i,j] <- dnbinom(y.true[i,j],size=model$theta[1]*model$K1D[j],prob=model$p[i,j], log = TRUE)
         }
       }
     }
     ll.y.cand <- ll.y
-    
+    ID.cand <- ID.curr
+    y.true.cand <- y.true
     for(l in 1:n.samples){#loop over samples
-      ID.cand=ID.curr
-      y.true.cand=y.true
-      propprobs=model$lam[1:M,this.j[l]]
+      propprobs <- model$lam[1:M,this.j[l]]
       #zero out lam.use for individuals whose G.true conflict with G.obs
       #this prevents assigning samples to individuals that do not match cov values
       idx2 <- which(G.obs.seen[l,])#which indices of this G.obs are not missing values?
@@ -141,10 +140,8 @@ IDSampler <- nimbleFunction(
           ll.y.cand[swapped[1],this.j[l]] <- dnbinom(y.true.cand[swapped[1],this.j[l]],size=model$theta[1]*model$K1D[this.j[l]],prob=model$p[swapped[1],this.j[l]],log=TRUE)
           ll.y.cand[swapped[2],this.j[l]] <- dnbinom(y.true.cand[swapped[2],this.j[l]],size=model$theta[1]*model$K1D[this.j[l]],prob=model$p[swapped[2],this.j[l]],log=TRUE)
           #select sample to move proposal probabilities
-          #P(select a sample for this ID)*P(select this j|this ID)
-          #n.samples cancels out in MH ratio. Including for clarity
-          focalprob <- (sum(ID.curr==swapped[1])/n.samples)*(y.true[swapped[1],this.j[l]])/sum(y.true[swapped[1],1:J])
-          focalbackprob <- (sum(ID.cand==swapped[2])/n.samples)*(y.true.cand[swapped[2],this.j[l]])/sum(y.true.cand[swapped[2],1:J])
+          focalprob <- y.true[ID.curr[l],this.j[l],this.k[l]]/n.samples
+          focalbackprob <- y.true.cand[ID.cand[l],this.j[l],this.k[l]]/n.samples
           
           #sum log likelihoods and do MH step
           lp_initial <- sum(ll.y[swapped,this.j[l]])
@@ -157,6 +154,10 @@ IDSampler <- nimbleFunction(
             ll.y[swapped[1],this.j[l]] <- ll.y.cand[swapped[1],this.j[l]]
             ll.y[swapped[2],this.j[l]] <- ll.y.cand[swapped[2],this.j[l]]
             ID.curr[l] <- ID.cand[l]
+          }else{
+            y.true.cand[swapped[1],this.j[l]] <- y.true[swapped[1],this.j[l]]
+            y.true.cand[swapped[2],this.j[l]] <- y.true[swapped[2],this.j[l]]
+            ID.cand[l] <- ID.curr[l]
           }
         }
       }
